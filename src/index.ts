@@ -1,117 +1,128 @@
 #!/usr/bin/env node
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js'
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { z } from 'zod'
-import { zodToJsonSchema } from 'zod-to-json-schema'
-import fetch from 'node-fetch'
-import dotenv from 'dotenv'
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import fetch from "node-fetch";
+import dotenv from "dotenv";
 
-import { GetCommonEthPricesSchema } from './zodSchemas.js'
+import { GetCommonEthPricesSchema } from "./zodSchemas.js";
 
-dotenv.config()
+dotenv.config();
 
 // Create server instance
 const server = new Server(
   {
-    name: 'oneinch-price-mcp',
-    version: '1.0.0',
+    name: "oneinch-price-mcp",
+    version: "1.0.0",
   },
   {
     capabilities: {
       tools: {},
     },
-  },
-)
+  }
+);
 
 // Handle list tools request
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
-        name: 'get_common_eth_prices',
-        description: 'Get spot prices for common ETH tokens (USDC, WETH, USDT, DAI) on Ethereum mainnet',
+        name: "get_common_eth_prices",
+        description:
+          "Get spot prices for common ETH tokens (USDC, WETH, USDT, DAI) on Ethereum mainnet",
         inputSchema: zodToJsonSchema(GetCommonEthPricesSchema),
       },
     ],
-  }
-})
+  };
+});
 
 // Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     if (!request.params?.name) {
-      throw new Error('Missing tool name')
+      throw new Error("Missing tool name");
     }
     if (!request.params.arguments) {
-      throw new Error('Missing arguments')
+      throw new Error("Missing arguments");
     }
 
-    const ONEINCH_API_KEY = process.env.ONEINCH_API_KEY
+    const ONEINCH_API_KEY = process.env.ONEINCH_API_KEY;
     if (!ONEINCH_API_KEY) {
-      throw new Error('ONEINCH_API_KEY is not set')
+      throw new Error("ONEINCH_API_KEY is not set");
     }
 
-    let endpoint = ''
-    let queryParams: URLSearchParams = new URLSearchParams()
+    let endpoint = "";
+    let queryParams: URLSearchParams = new URLSearchParams();
 
     switch (request.params.name) {
-      case 'get_common_eth_prices': {
-        const { currency } = request.params.arguments as z.infer<typeof GetCommonEthPricesSchema>
+      case "get_common_eth_prices": {
         const commonAddresses = [
-          '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
-          '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
-          '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
-          '0x6B175474E89094C44Da98b954EedeAC495271d0F', // DAI
-        ]
-        const addressesParam = commonAddresses.join(',')
-        endpoint = `/price/v1.1/1/${addressesParam}`
-        if (currency) queryParams.append('currency', currency)
-        break
+          "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // USDC
+          "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
+          "0xdAC17F958D2ee523a2206206994597C13D831ec7", // USDT
+          "0x6B175474E89094C44Da98b954EedeAC495271d0F", // DAI
+          "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", // WBTC
+          "0x514910771AF9Ca656af840dff83E8264EcF986CA", // LINK
+          "0x111111111117dc0aa78b770fa6a738034120c302", // 1INCH
+        ];
+        const addressesParam = commonAddresses.join(",");
+        endpoint = `/price/v1.1/1/${addressesParam}`;
+        queryParams.append("currency", "USD");
+        break;
       }
       default:
-        throw new Error(`Unknown tool: ${request.params.name}`)
+        throw new Error(`Unknown tool: ${request.params.name}`);
     }
 
     // Build final URL
-    const baseUrl = 'https://api.1inch.dev'
-    const url = new URL(endpoint.startsWith('/') ? endpoint.slice(1) : endpoint, baseUrl)
-    url.search = queryParams.toString()
+    const baseUrl = "https://api.1inch.dev";
+    const url = new URL(
+      endpoint.startsWith("/") ? endpoint.slice(1) : endpoint,
+      baseUrl
+    );
+    url.search = queryParams.toString();
 
     // Execute HTTP call
     const response = await fetch(url.toString(), {
-      method: 'GET',
+      method: "GET",
       headers: {
-        Accept: 'application/json',
+        Accept: "application/json",
         Authorization: `Bearer ${ONEINCH_API_KEY}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-    })
+    });
 
     if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`)
+      const errorText = await response.text();
+      throw new Error(
+        `HTTP error! status: ${response.status}, body: ${errorText}`
+      );
     }
 
-    const data = await response.json()
+    const data = await response.json();
     // Return raw JSON; optionally perform formatting here
-    return { result: JSON.stringify(data, null, 2) }
+    return { result: JSON.stringify(data, null, 2) };
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      throw new Error(`Invalid input: ${JSON.stringify(error.errors)}`)
+      throw new Error(`Invalid input: ${JSON.stringify(error.errors)}`);
     }
-    throw error
+    throw error;
   }
-})
+});
 
 async function runServer() {
-  const transport = new StdioServerTransport()
-  await server.connect(transport)
-  console.error('1inch MCP Server running on stdio')
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("1inch MCP Server running on stdio");
 }
 
 runServer().catch((error) => {
-  console.error('Fatal error:', error)
-  process.exit(1)
-})
+  console.error("Fatal error:", error);
+  process.exit(1);
+});
